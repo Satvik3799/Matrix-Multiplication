@@ -1,0 +1,162 @@
+$parameter ORDER 16
+$parameter ORDER_by_2 8
+
+//
+// observation signals to keep track of progress.
+//
+$pipe mmul_I : $uint<8> $signal
+$pipe mmul_J : $uint<8> $signal
+$pipe mmul_START: $uint<8> $signal
+$pipe mmul_END: $uint<8> $signal
+
+$storage A B C: $array[ORDER][ORDER] $of $uint<32>
+
+$module [storeA] $in (I J: $uint<8> wval: $uint<32>) $out () $is
+{
+	A[I][J] := wval
+}
+$module [storeB] $in (I J: $uint<8> wval: $uint<32>) $out () $is
+{
+	B[I][J] := wval
+}
+
+$module [loadC] $in (I J : $uint<8>) $out (Y : $uint<32>) $is
+{
+	Y := C[I][J]
+}
+
+
+$module [dot_product] $in (I J: $uint<8>) $out (result: $uint<32>) $is
+{
+	$branchblock[loop] {
+
+		$dopipeline $depth 31 $fullrate
+			$merge $entry $loopback
+				$phi K := $zero<8> $on $entry nK $on $loopback
+				$phi SUM0 := ($bitcast ($uint<32>) 0)  $on $entry nSUM0 $on $loopback
+				$phi SUM1 := ($bitcast ($uint<32>) 0)  $on $entry nSUM1 $on $loopback
+			$endmerge
+			$volatile nK := (K + 2)
+			$volatile continue_flag := (K < (ORDER-2))
+			$volatile K1 := (K+1)
+
+			nSUM0 := (SUM0 + (A[I][K] * B[K][J]))
+			nSUM1 := (SUM0 + (A[I][K1] * B[K1][J]))
+		$while continue_flag
+	} (nSUM0 => R0 nSUM1 => R1)
+	$volatile result := (R0 + R1)
+}
+
+$module [mmul] $in () $out () $is
+{
+	mmul_START := 1
+	$branchblock[loop1] {
+	    u := mmul_START v := mmul_END // for logging 
+	    $merge $entry I_loopback 
+			$phi I := $zero<8> $on $entry nI $on I_loopback
+		$endmerge
+		$volatile nI := (I + 1)
+
+		$dopipeline $depth 3 
+			$merge $entry $loopback 
+				$phi J := $zero<8> $on $entry nJ $on $loopback
+			$endmerge
+			$volatile nJ := (J + 1)
+			$volatile continue_flag := (J < (ORDER_by_2 - 1))
+	
+			// dot-product!
+			C[I][J] := ($call dot_product (I J))
+	
+			mmul_I := I
+			mmul_J := J
+			
+		$while continue_flag
+
+	    $if (I < (ORDER_by_2-1)) $then $place [I_loopback] $endif
+	}
+
+
+	$branchblock[loop2] {
+	    u := mmul_START v := mmul_END // for logging 
+	    $merge $entry I_loopback 
+			$phi I := $zero<8> $on $entry nI $on I_loopback
+		$endmerge
+		$volatile nI := (I + 1)
+
+		$dopipeline $depth 3 
+			$merge $entry $loopback 
+				$phi J := $zero<8> $on $entry nJ $on $loopback
+			$endmerge
+			$volatile nJ := (J + 1)
+			$volatile continue_flag := (J < (ORDER_by_2 - 1))
+			$volatile I_1 := (I + 8)
+			$volatile J_1 := (J + 8)
+	
+			// dot-product!
+			C[I_1][J_1] := ($call dot_product (I_1 J_1))
+	
+			mmul_I := I
+			mmul_J := J
+			
+		$while continue_flag
+
+	    $if (I < (ORDER_by_2-1)) $then $place [I_loopback] $endif
+	}
+
+	$branchblock[loop3] {
+	    u := mmul_START v := mmul_END // for logging 
+	    $merge $entry I_loopback 
+			$phi I := $zero<8> $on $entry nI $on I_loopback
+		$endmerge
+		$volatile nI := (I + 1)
+
+		$dopipeline $depth 3 
+			$merge $entry $loopback 
+				$phi J := $zero<8> $on $entry nJ $on $loopback
+			$endmerge
+			$volatile nJ := (J + 1)
+			$volatile continue_flag := (J < (ORDER_by_2 - 1))
+			//$volatile I_1 := (I + 8)
+			$volatile J_1 := (J + 8)
+	
+			// dot-product!
+			C[I][J_1] := ($call dot_product (I J_1))
+	
+			mmul_I := I
+			mmul_J := J
+			
+		$while continue_flag
+
+	    $if (I < (ORDER_by_2-1)) $then $place [I_loopback] $endif
+	}
+
+	$branchblock[loop4] {
+	    u := mmul_START v := mmul_END // for logging 
+	    $merge $entry I_loopback 
+			$phi I := $zero<8> $on $entry nI $on I_loopback
+		$endmerge
+		$volatile nI := (I + 1)
+
+		$dopipeline $depth 3 
+			$merge $entry $loopback 
+				$phi J := $zero<8> $on $entry nJ $on $loopback
+			$endmerge
+			$volatile nJ := (J + 1)
+			$volatile continue_flag := (J < (ORDER_by_2 - 1))
+			$volatile I_1 := (I + 8)
+			//$volatile J_1 := (J + 8)
+	
+			// dot-product!
+			C[I_1][J] := ($call dot_product (I_1 J))
+	
+			mmul_I := I
+			mmul_J := J
+			
+		$while continue_flag
+
+	    $if (I < (ORDER_by_2-1)) $then $place [I_loopback] $endif
+	}
+
+	mmul_END := 1
+}
+
